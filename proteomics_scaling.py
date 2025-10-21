@@ -14,129 +14,104 @@ def _():
 
 @app.cell
 def _(mo):
-    mo.md("""# Reproduction of Figures 2, 3, 4, and 5""")
+    mo.md("""# A Comparative Framework for Database Search""")
     return
 
 
 @app.cell
-def _():
-    # --- Constants and Assumptions from the paper ---
-    # These values are based on the "Comparative scaling analysis" section.
+def _(mo):
+    mo.md("""### Interactive Scaling Analysis""")
+    return
 
-    # Performance estimates
-    CPU_SPEC_PEPTIDE_PER_S = 2e6  # Spectrum-peptide comparisons per second on CPU
-    GPU_DOT_PRODUCT_PER_S = 2e7  # Dot-product evaluations per second on GPU
-    CROSS_ENCODER_INFERENCE_PER_S = 1e4  # Spectrum-peptide pairs per second for cross-encoder
-    ENCODER_DECODER_DECODING_PER_S = 2e3  # Spectra per second for de novo decoding
-    ANN_RETRIEVAL_MS = 0.2  # milliseconds per query
-    ANN_RETRIEVAL_S = ANN_RETRIEVAL_MS / 1000.0  # seconds per query
 
-    # Parameters for scaling laws
-    rho = 1e-4  # Proportion of peptides in precursor mass window (assumed, typical value)
+@app.cell
+def _(mo):
+    mo.md(
+        """
+    Use the sliders and input boxes below to see how changes in hardware 
+        performance and search parameters affect the estimated runtimes for 
+        different proteomics search strategies. Figures 3, 4, and 5 will update
+        automatically.
+    """
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    # For CPU-based methods, we model a multi-core server processor with vectorised
+    # scoring kernels sustaining ∼ 2 × 10^6 spectrum–peptide comparisons per second.
+    cpu_slider = mo.ui.number(
+        start=1e5, stop=1e8, step=1e5, value=2e6, label="CPU spectrum–peptide comparisons per second/s", full_width=True
+    )
+    # GPU acceleration is modeled on a datacenter-class device (e.g., NVIDIA A100) sustaining
+    #  ∼ 2 × 10^7 dot-product evaluations per second. 
+    gpu_slider = mo.ui.number(
+        start=1e6, stop=1e9, step=1e6, value=2e7, label="GPU dot-product evaluations per second/s", full_width=True
+    )
+    # cross-encoder inference is assumed at ∼ 10^4 spectrum–peptide pairs per second
+    cross_encoder_slider = mo.ui.number(
+        start=1e3, stop=1e5, step=100, value=1e4, label="Cross-encoder inferences/s", full_width=True
+    )
+    # encoder–decoder de novo decoding achieves ∼ 2×10^3 spectra per second
+    de_novo_slider = mo.ui.number(
+        start=1e2, stop=1e4, step=100, value=2e3, label="De novo decodes/s", full_width=True
+    )
+    # ANN retrieval is modeled as logarithmic in P , with ∼ 0.2 ms per query and an
+    # additional cost for re-ranking
+    ann_slider = mo.ui.number(
+        start=0.01, stop=5.0, step=0.01, value=0.2, label="ANN retrieval (ms/query)", full_width=True
+    )
+    rho_slider = mo.ui.slider(
+        start=1e-6, stop=1e-3, step=1e-6, value=2e-5, label="ρ (precursor tolerance fraction)", full_width=False
+    )
+    k_slider = mo.ui.slider(
+        start=10, stop=500, step=10, value=50, label="K (candidates to rescore)", full_width=False
+    )
     return (
-        ANN_RETRIEVAL_S,
-        CPU_SPEC_PEPTIDE_PER_S,
-        CROSS_ENCODER_INFERENCE_PER_S,
-        ENCODER_DECODER_DECODING_PER_S,
-        GPU_DOT_PRODUCT_PER_S,
-        rho,
+        ann_slider,
+        cpu_slider,
+        cross_encoder_slider,
+        de_novo_slider,
+        gpu_slider,
+        k_slider,
+        rho_slider,
     )
 
 
 @app.cell
 def _(
-    ANN_RETRIEVAL_S,
-    CPU_SPEC_PEPTIDE_PER_S,
-    CROSS_ENCODER_INFERENCE_PER_S,
-    ENCODER_DECODER_DECODING_PER_S,
-    GPU_DOT_PRODUCT_PER_S,
-    np,
-    rho,
+    ann_slider,
+    cpu_slider,
+    cross_encoder_slider,
+    de_novo_slider,
+    gpu_slider,
+    k_slider,
+    mo,
+    rho_slider,
 ):
-    # --- Data Generation Functions ---
+    # Arrange them into a two-column layout using vstack and hstack
+    ui_layout = mo.vstack([
+                mo.md("**Performance Parameters**"),
+                cpu_slider,
+                gpu_slider,
+                cross_encoder_slider,
+                de_novo_slider,
+                ann_slider,
+                mo.md("**Search Space Parameters**"),
+                rho_slider,
+                k_slider],
+        align='center'
+    )
 
-    def calculate_runtimes(S, P, K):
-        """
-        Calculates estimated wall-clock runtimes for all methods.
-        This version is corrected to handle NumPy broadcasting properly.
-        """
-        S = np.asarray(S)
-        P = np.asarray(P)
-
-        # This creates a zero-array with the correct broadcast shape from S and P.
-        # It ensures that calculations that don't depend on one of the variables
-        # still produce an array of the correct dimension.
-        broadcast_zeros = S * 0 + P * 0
-
-        # Calculations that depend on both S and P are naturally broadcast correctly.
-        time_classical_cpu = (S * rho * P) / CPU_SPEC_PEPTIDE_PER_S
-        time_classical_gpu = (S * rho * P) / GPU_DOT_PRODUCT_PER_S
-        time_cross_encoder = (S * rho * P) / CROSS_ENCODER_INFERENCE_PER_S
-
-        # For calculations that are independent of P, we add broadcast_zeros
-        # to enforce the correct array shape when P is varied.
-        C_frag_index_cpu = (rho * 1e5) / CPU_SPEC_PEPTIDE_PER_S
-        time_fragment_indexed_cpu = S * C_frag_index_cpu + broadcast_zeros
-
-        C_frag_index_gpu = (rho * 1e5) / GPU_DOT_PRODUCT_PER_S
-        time_fragment_indexed_gpu = S * C_frag_index_gpu + broadcast_zeros
-
-        time_denovo_decode = S / ENCODER_DECODER_DECODING_PER_S + broadcast_zeros
-        time_denovo_rescore = (S * K) / CROSS_ENCODER_INFERENCE_PER_S + broadcast_zeros
-        time_denovo_ce = time_denovo_decode + time_denovo_rescore
-
-        # Hybrid calculations
-        time_ann_retrieval = S * (np.log(P) * ANN_RETRIEVAL_S)
-        time_bi_encoder_rescore = (S * K) / CROSS_ENCODER_INFERENCE_PER_S + broadcast_zeros
-        time_bi_encoder_ann = time_ann_retrieval + time_bi_encoder_rescore
-
-        time_classical_rescoring = (S * K) / CROSS_ENCODER_INFERENCE_PER_S + broadcast_zeros
-        time_classical_ce = time_classical_cpu + time_classical_rescoring
-
-        return {
-            "Classical (CPU)": time_classical_cpu,
-            "Classical (GPU)": time_classical_gpu,
-            "Pure cross-encoder": time_cross_encoder,
-            "Fragment-indexed (CPU)": time_fragment_indexed_cpu,
-            "Fragment-indexed (GPU)": time_fragment_indexed_gpu,
-            "De novo+CE/ED": time_denovo_ce,
-            "Bi-encoder+ANN": time_bi_encoder_ann,
-            "Classical+CE": time_classical_ce,
-        }
-
-
-    def calculate_memory(P):
-        """Calculates memory requirements."""
-        # Assumptions for memory calculation
-        # Sequence store: ~25 bytes per peptide on average (e.g., for 10^8 peptides -> 2.5 GiB)
-        bytes_per_peptide = 25
-
-        # ANN embedding index: ~30-50 GiB at 10^8 peptides
-        # This implies roughly 400 bytes per peptide
-        bytes_per_embedding = 400
-
-        # Fragment-ion index: >100 GiB at 10^8 peptides (with decoys)
-        # This implies roughly 1200 bytes per peptide (including decoys)
-        bytes_per_fragment_entry = 1200
-
-        # Convert bytes to GiB
-        bytes_to_gib = 1 / (1024**3)
-
-        mem_sequence = P * bytes_per_peptide * bytes_to_gib
-        mem_ann = P * bytes_per_embedding * bytes_to_gib
-        mem_fragment = P * bytes_per_fragment_entry * bytes_to_gib
-
-        return {
-            "Sequence store": mem_sequence,
-            "ANN embedding index": mem_ann,
-            "Fragment-ion index": mem_fragment,
-        }
-    return calculate_memory, calculate_runtimes
+    # Display the final layout
+    ui_layout
+    return
 
 
 @app.cell
 def _(mo):
-    mo.md("## Figure 2: Asymptotic Scaling")
+    mo.md("""## Figure 2: Asymptotic Scaling""")
     return
 
 
@@ -147,42 +122,42 @@ def _(np, plt):
 
         # --- Figure 2A: Scaling vs Database Size P ---
         S_fixed = 1e6
-        P_range = np.logspace(2, 10, 100)
+        P_range = np.logspace(2, 10, 200)
 
         # Simplified Big-O for illustration
         classical_p = P_range
         cross_encoder_p = P_range * 100 # Larger constant factor
-        bi_encoder_p = np.log(P_range) * 1e6 # Scaled to be visible
-        fragment_indexed_p = np.full_like(P_range, 1e5) # Constant
-        denovo_p = np.full_like(P_range, 2e5) # Constant, higher than fragment
+        bi_encoder_p = np.log(P_range)
+        fragment_indexed_p = np.full_like(P_range, 10) # Constant
+        denovo_p = np.full_like(P_range, 30) # Constant, higher than fragment
 
-        ax1.loglog(P_range, classical_p, label="Classical CPU ~O(SρP)")
-        ax1.loglog(P_range, cross_encoder_p, label="Cross-encoder ~ O(SρP)")
+        ax1.loglog(P_range, classical_p, label="Classical CPU ~O(Sρ*P)")
+        ax1.loglog(P_range, cross_encoder_p, label="Cross-encoder ~ O(Sρ*P)")
         ax1.loglog(P_range, bi_encoder_p, label="Bi-encoder+ANN ~O(S(log P+K))")
         ax1.loglog(P_range, fragment_indexed_p, label="Fragment-indexed ~ O(S(L+M))")
         ax1.loglog(P_range, denovo_p, label="De novo→CE ~O(S(C_dn+K))")
 
-        ax1.set_title("A. Big-O scaling vs database size")
+        ax1.set_title("Big-O scaling vs database size")
         ax1.set_xlabel("Database size P")
         ax1.set_ylabel("Relative runtime (arb. units)")
         ax1.legend()
-        ax1.grid(True, which="both", ls="--", alpha=0.5)
+        ax1.grid(True, which="major", ls="--", alpha=0.5)
 
         # --- Figure 2B: Scaling vs Spectra S ---
         S_range = np.logspace(3, 8, 100)
 
         # All are O(S), so they are parallel. Differences are constant factors.
-        ax2.loglog(S_range, S_range * 0.1, label="Classical CPU~O(S)")
+        ax2.loglog(S_range, S_range, label="Classical CPU~O(S)")
         ax2.loglog(S_range, S_range * 10, label="Cross-encoder ~ O(S)")
-        ax2.loglog(S_range, S_range * 0.05, label="Bi-encoder+ANN ~ O(S)")
-        ax2.loglog(S_range, S_range * 0.02, label="Fragment-indexed ~ O(S)")
+        ax2.loglog(S_range, S_range * 0.1, label="Bi-encoder+ANN ~ O(S)")
+        ax2.loglog(S_range, S_range * 0.05, label="Fragment-indexed ~ O(S)")
         ax2.loglog(S_range, S_range * 0.5, label="De novo→CE ~O(S)")
 
-        ax2.set_title("B. Big-O scaling vs spectra")
+        ax2.set_title("Big-O scaling vs spectra")
         ax2.set_xlabel("Spectra S")
         ax2.set_ylabel("Relative runtime (arb. units)")
         ax2.legend()
-        ax2.grid(True, which="both", ls="--", alpha=0.5)
+        ax2.grid(True, which="major", ls="--", alpha=0.5)
 
         fig.tight_layout()
         plt.show()
@@ -193,53 +168,109 @@ def _(np, plt):
 
 @app.cell
 def _(mo):
-    mo.md("## Figure 3: Memory and Rescoring Overhead")
+    mo.md("""## Figure 3: Memory and Rescoring Overhead""")
     return
 
 
 @app.cell
+def _(np):
+    # --- Data Generation Functions ---
+
+    def calculate_runtimes(S, P, K, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho):
+        """Calculates runtimes using parameters from the interactive UI elements."""
+        S = np.asarray(S) # the number of experimental tandem mass spectra
+        P = np.asarray(P) # the number of peptides in the search database
+        K = np.asarray(K)
+
+        broadcast_zeros = S * 0 + P * 0 + K * 0
+        ann_perf_s = ann_perf_ms / 1000.0
+
+        # rho is the proportion of peptides falling within the precursor tolerance window
+        time_classical_cpu = (S * rho * P) / cpu_perf
+        time_classical_gpu = (S * rho * P) / gpu_perf
+        time_cross_encoder = (S * rho * P) / cross_enc_perf
+
+        C_frag_index_cpu = (rho * 1e5) / cpu_perf
+        time_fragment_indexed_cpu = S * C_frag_index_cpu + broadcast_zeros
+
+        C_frag_index_gpu = (rho * 1e5) / gpu_perf
+        time_fragment_indexed_gpu = S * C_frag_index_gpu + broadcast_zeros
+
+        time_denovo_decode = S / de_novo_perf + broadcast_zeros
+        time_denovo_rescore = (S * K) / cross_enc_perf + broadcast_zeros
+        time_denovo_ce = time_denovo_decode + time_denovo_rescore
+
+        time_ann_retrieval = S * (np.log(P) * ann_perf_s)
+        time_bi_encoder_rescore = (S * K) / cross_enc_perf + broadcast_zeros
+        time_bi_encoder_ann = time_ann_retrieval + time_bi_encoder_rescore
+
+        time_classical_rescoring = (S * K) / cross_enc_perf + broadcast_zeros
+        time_classical_ce = time_classical_cpu + time_classical_rescoring
+
+        return {
+            "Classical (CPU)": time_classical_cpu, 
+            "Classical (GPU)": time_classical_gpu,
+            "Pure cross-encoder": time_cross_encoder, 
+            "Fragment-indexed (CPU)": time_fragment_indexed_cpu,
+            "Fragment-indexed (GPU)": time_fragment_indexed_gpu, 
+            "De novo+CE/ED": time_denovo_ce,
+            "Bi-encoder+ANN": time_bi_encoder_ann, 
+            "Classical+CE": time_classical_ce,
+        }
+
+    def calculate_memory(P):
+        """Calculates memory requirements."""
+        P = np.asarray(P)
+        bytes_to_gib = 1 / (1024**3)
+        mem_sequence = P * 25 * bytes_to_gib
+        mem_ann = P * 400 * bytes_to_gib
+        mem_fragment = P * 1200 * bytes_to_gib
+        return {
+            "Sequence store": mem_sequence, "ANN embedding index": mem_ann, "Fragment-ion index": mem_fragment
+        }
+    return calculate_memory, calculate_runtimes
+
+
+@app.cell
 def _(
-    CROSS_ENCODER_INFERENCE_PER_S,
+    ann_slider,
     calculate_memory,
     calculate_runtimes,
+    cpu_slider,
+    cross_encoder_slider,
+    de_novo_slider,
+    k_slider,
     np,
     plt,
+    rho_slider,
 ):
-    def plot_figure3():
+    def plot_figure3(k_value, cpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho):
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-        # --- Figure 3A: Runtime vs K ---
-        S_fixed = 1e6
-        P_fixed = 4e8
-        K_range = np.linspace(0, 400, 100)
+        # Subplot A: Runtime vs K
+        S_fixed, P_fixed = 1e6, 4e8
+        K_range = np.linspace(0, 500, 100)
+        runtimes_k = calculate_runtimes(S_fixed, P_fixed, K_range, cpu_perf, 1, cross_enc_perf, de_novo_perf, ann_perf_ms, rho)
 
-        # Calculate baseline costs (at K=0)
-        runtimes_at_K0 = calculate_runtimes(S_fixed, P_fixed, K=0)
+        ax1.plot(K_range, runtimes_k["Classical+CE"], label="Classical+CE")
+        ax1.plot(K_range, runtimes_k["Bi-encoder+ANN"], label="Bi-encoder+ANN")
+        ax1.plot(K_range, runtimes_k["De novo+CE/ED"], label="De novo→CE")
 
-        # Calculate full runtimes
-        classical_ce_k = runtimes_at_K0["Classical+CE"] + (S_fixed * K_range) / CROSS_ENCODER_INFERENCE_PER_S
-        bi_encoder_k = runtimes_at_K0["Bi-encoder+ANN"] + (S_fixed * K_range) / CROSS_ENCODER_INFERENCE_PER_S
-        denovo_ce_k = runtimes_at_K0["De novo+CE/ED"] + (S_fixed * K_range) / CROSS_ENCODER_INFERENCE_PER_S
-
-        ax1.plot(K_range, classical_ce_k, label="Classical+CE")
-        ax1.plot(K_range, bi_encoder_k, label="Bi-encoder+ANN")
-        ax1.plot(K_range, denovo_ce_k, label="De novo→CE")
-
-        ax1.set_title("A. Runtime vs K")
+        ax1.set_title("Runtime vs K")
         ax1.set_xlabel("K candidates per spectrum")
         ax1.set_ylabel(f"Wall time (s) for S={S_fixed:.0e}, P={P_fixed:.0e}")
         ax1.legend()
         ax1.grid(True, which="both", ls="--", alpha=0.5)
 
-        # --- Figure 3B: RAM vs Database Size ---
-        P_range = np.logspace(6, 10, 100)
-        memory_data = calculate_memory(P_range)
+        # Subplot B: RAM vs Database Size
+        P_range_mem = np.logspace(6, 10, 100)
+        memory_data = calculate_memory(P_range_mem)
 
-        ax2.loglog(P_range, memory_data["Sequence store"], label="Sequence store")
-        ax2.loglog(P_range, memory_data["ANN embedding index"], label="ANN embedding index")
-        ax2.loglog(P_range, memory_data["Fragment-ion index"], label="Fragment-ion index")
+        ax2.loglog(P_range_mem, memory_data["Sequence store"], label="Sequence store")
+        ax2.loglog(P_range_mem, memory_data["ANN embedding index"], label="ANN embedding index")
+        ax2.loglog(P_range_mem, memory_data["Fragment-ion index"], label="Fragment-ion index")
 
-        ax2.set_title("B. RAM vs database size")
+        ax2.set_title("RAM vs database size")
         ax2.set_xlabel("Database size P")
         ax2.set_ylabel("Memory (GiB)")
         ax2.legend()
@@ -248,27 +279,35 @@ def _(
         fig.tight_layout()
         return fig
 
-    plot_figure3()
+    plot_figure3(k_slider.value, cpu_slider.value, cross_encoder_slider.value, de_novo_slider.value, ann_slider.value, rho_slider.value)
     return
 
 
 @app.cell
 def _(mo):
-    mo.md("## Figure 4: Estimated Wall Times and Practical Limits")
+    mo.md("""## Figure 4: Estimated Wall Times and Practical Limits""")
     return
 
 
 @app.cell
-def _(calculate_runtimes, np, plt):
-    def plot_figure4():
+def _(
+    ann_slider,
+    calculate_runtimes,
+    cpu_slider,
+    cross_encoder_slider,
+    de_novo_slider,
+    gpu_slider,
+    k_slider,
+    np,
+    plt,
+    rho_slider,
+):
+    def plot_figure4(k_value, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho):
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-        K_fixed = 100
 
-        # --- Figure 4A: Wall-time vs Database size P ---
-        S_fixed = 1e6
-        P_range = np.logspace(5, 10, 100)
-        runtimes_p = calculate_runtimes(S_fixed, P_range, K_fixed)
-
+        # Subplot A: Wall-time vs Database size P
+        S_fixed, P_range = 1e6, np.logspace(5, 10, 100)
+        runtimes_p = calculate_runtimes(S_fixed, P_range, k_value, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho)
         for label, data in runtimes_p.items():
             ax1.loglog(P_range, data, label=label)
 
@@ -279,11 +318,9 @@ def _(calculate_runtimes, np, plt):
         ax1.legend(fontsize='small')
         ax1.grid(True, which="both", ls="--", alpha=0.5)
 
-        # --- Figure 4B: Wall-time vs Spectra S ---
-        P_fixed = 4e8
-        S_range = np.logspace(5, 7, 100)
-        runtimes_s = calculate_runtimes(S_range, P_fixed, K_fixed)
-
+        # Subplot B: Wall-time vs Spectra S
+        P_fixed, S_range = 4e8, np.logspace(5, 7, 100)
+        runtimes_s = calculate_runtimes(S_range, P_fixed, k_value, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho)
         for label, data in runtimes_s.items():
             ax2.loglog(S_range, data, label=label)
 
@@ -297,47 +334,51 @@ def _(calculate_runtimes, np, plt):
         fig.tight_layout()
         return fig
 
-    plot_figure4()
+    plot_figure4(k_slider.value, cpu_slider.value, gpu_slider.value, cross_encoder_slider.value, de_novo_slider.value, ann_slider.value, rho_slider.value)
     return
 
 
 @app.cell
 def _(mo):
-    mo.md("## Figure 5: Runtime Scaling Heatmaps")
+    mo.md("""## Figure 5: Runtime Scaling Heatmaps""")
     return
 
 
 @app.cell
-def _(calculate_runtimes, np, plt):
-
-
-    def plot_figure5():
+def _(
+    ann_slider,
+    calculate_runtimes,
+    cpu_slider,
+    cross_encoder_slider,
+    de_novo_slider,
+    gpu_slider,
+    k_slider,
+    np,
+    plt,
+    rho_slider,
+):
+    def plot_figure5(k_value, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho):
+        # Data generation
         S_range = np.logspace(5, 8, 50)
         P_range = np.logspace(7, 10, 50)
         S_grid, P_grid = np.meshgrid(S_range, P_range, indexing='ij')
-        K_fixed = 100
+        all_runtimes = calculate_runtimes(S_grid, P_grid, k_value, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho)
+        methods_to_plot = ["Classical (CPU)", "Fragment-indexed (CPU)", "Classical+CE", "De novo+CE/ED", "Bi-encoder+ANN", "Pure cross-encoder"]
 
-        all_runtimes = calculate_runtimes(S_grid, P_grid, K_fixed)
-
-        methods_to_plot = [
-            "Classical (CPU)", "Fragment-indexed (CPU)", "Classical+CE",
-            "De novo+CE/ED", "Bi-encoder+ANN", "Pure cross-encoder"
-        ]
-
+        # Figure and axes setup
         fig, axes = plt.subplots(2, 3, figsize=(15, 9), sharex=True, sharey=True)
         axes = axes.ravel()
 
+        # Color scale normalization
         with np.errstate(divide='ignore'):
             log_runtimes = {label: np.log10(all_runtimes[label]) for label in methods_to_plot}
-
         valid_runtimes = [rt[np.isfinite(rt)] for rt in log_runtimes.values() if np.any(np.isfinite(rt))]
-        vmin = np.min([np.min(rt) for rt in valid_runtimes]) if valid_runtimes else 0
-        vmax = np.max([np.max(rt) for rt in valid_runtimes]) if valid_runtimes else 10
+        vmin, vmax = (np.min([np.min(rt) for rt in valid_runtimes]), np.max([np.max(rt) for rt in valid_runtimes])) if valid_runtimes else (0, 10)
 
+        # Plotting loop
         for i, method in enumerate(methods_to_plot):
             ax = axes[i]
-            pcm = ax.pcolormesh(P_range, S_range, log_runtimes[method], 
-                                vmin=vmin, vmax=vmax, cmap='viridis')
+            pcm = ax.pcolormesh(P_range, S_range, log_runtimes[method], vmin=vmin, vmax=vmax, cmap='viridis')
             ax.set_xscale('log')
             ax.set_yscale('log')
             ax.set_title(method)
@@ -346,15 +387,16 @@ def _(calculate_runtimes, np, plt):
             if i % 3 == 0:
                 ax.set_ylabel("Spectra S")
 
+        # Figure adjustments and colorbar
         fig.subplots_adjust(right=0.85, top=0.92)
         cbar_ax = fig.add_axes([0.88, 0.15, 0.03, 0.7])
         cbar = fig.colorbar(pcm, cax=cbar_ax)
         cbar.set_label('Runtime (s) log scale')
-
         fig.suptitle("Heatmaps of runtime scaling as a function of both S and P", fontsize=16)
+
         return fig
 
-    plot_figure5()
+    plot_figure5(k_slider.value, cpu_slider.value, gpu_slider.value, cross_encoder_slider.value, de_novo_slider.value, ann_slider.value, rho_slider.value)
     return
 
 
