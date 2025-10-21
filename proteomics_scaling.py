@@ -41,25 +41,25 @@ def _(mo):
 def _(mo):
     # For CPU-based methods, we model a multi-core server processor with vectorised
     # scoring kernels sustaining ∼ 2 × 10^6 spectrum–peptide comparisons per second.
-    cpu_slider = mo.ui.number(
+    cpu_slider = mo.ui.slider(
         start=1e5, stop=1e8, step=1e5, value=2e6, label="CPU spectrum–peptide comparisons per second/s", full_width=True
     )
     # GPU acceleration is modeled on a datacenter-class device (e.g., NVIDIA A100) sustaining
     #  ∼ 2 × 10^7 dot-product evaluations per second. 
-    gpu_slider = mo.ui.number(
+    gpu_slider = mo.ui.slider(
         start=1e6, stop=1e9, step=1e6, value=2e7, label="GPU dot-product evaluations per second/s", full_width=True
     )
     # cross-encoder inference is assumed at ∼ 10^4 spectrum–peptide pairs per second
-    cross_encoder_slider = mo.ui.number(
+    cross_encoder_slider = mo.ui.slider(
         start=1e3, stop=1e5, step=100, value=1e4, label="Cross-encoder inferences/s", full_width=True
     )
     # encoder–decoder de novo decoding achieves ∼ 2×10^3 spectra per second
-    de_novo_slider = mo.ui.number(
+    de_novo_slider = mo.ui.slider(
         start=1e2, stop=1e4, step=100, value=2e3, label="De novo decodes/s", full_width=True
     )
     # ANN retrieval is modeled as logarithmic in P , with ∼ 0.2 ms per query and an
     # additional cost for re-ranking
-    ann_slider = mo.ui.number(
+    ann_slider = mo.ui.slider(
         start=0.01, stop=5.0, step=0.01, value=0.2, label="ANN retrieval (ms/query)", full_width=True
     )
     rho_slider = mo.ui.slider(
@@ -160,7 +160,7 @@ def _(np, plt):
         ax2.grid(True, which="major", ls="--", alpha=0.5)
 
         fig.tight_layout()
-        plt.show()
+        return fig
 
     plot_figure2()
     return
@@ -184,22 +184,26 @@ def _(np):
 
         ann_perf_s = ann_perf_ms / 1000.0
 
+        # Create a helper array of ones with the correct broadcasted shape.
+        # Adding the arrays forces numpy to determine the final shape.
+        ones = np.ones_like(S + P + K)
+
         # rho is the proportion of peptides falling within the precursor tolerance window
         time_classical_cpu = (S * rho * P) / cpu_perf
         time_classical_gpu = (S * rho * P) / gpu_perf
         time_cross_encoder = (S * rho * P) / cross_enc_perf
 
+        # Multiply by `ones` to ensure correct output shape.
         C_frag_index_cpu = (rho * 1e5) / cpu_perf
-        # By performing an operation with S, NumPy automatically broadcasts the shapes.
-        time_fragment_indexed_cpu = S * C_frag_index_cpu
+        time_fragment_indexed_cpu = S * C_frag_index_cpu * ones
 
         C_frag_index_gpu = (rho * 1e5) / gpu_perf
-        time_fragment_indexed_gpu = S * C_frag_index_gpu
+        time_fragment_indexed_gpu = S * C_frag_index_gpu * ones
 
         # S is already an array, so subsequent operations will broadcast correctly.
         time_denovo_decode = S / de_novo_perf
         time_denovo_rescore = (S * K) / cross_enc_perf
-        time_denovo_ce = time_denovo_decode + time_denovo_rescore
+        time_denovo_ce = time_denovo_decode + time_denovo_rescore * ones
 
         time_ann_retrieval = S * (np.log(P) * ann_perf_s)
         time_bi_encoder_rescore = (S * K) / cross_enc_perf
@@ -317,7 +321,7 @@ def _(
         ax1.set_ylabel(f"Wall time (s) @ S={S_fixed:.0e}")
         ax1.set_ylim(1e1, 1e12)
         ax1.legend(fontsize='small')
-        ax1.grid(True, which="both", ls="--", alpha=0.5)
+        ax1.grid(True, which="major", ls="--", alpha=0.5)
 
         # Subplot B: Wall-time vs Spectra S
         P_fixed, S_range = 4e8, np.logspace(5, 7, 100)
@@ -330,7 +334,7 @@ def _(
         ax2.set_ylabel(f"Wall time (s) @ P={P_fixed:.0e}")
         ax2.set_ylim(1e1, 1e12)
         ax2.legend(fontsize='small')
-        ax2.grid(True, which="both", ls="--", alpha=0.5)
+        ax2.grid(True, which="major", ls="--", alpha=0.5)
 
         fig.tight_layout()
         return fig
@@ -358,56 +362,65 @@ def _(
     plt,
     rho_slider,
 ):
+    from matplotlib.colors import LogNorm
+
     def plot_figure5(k_value, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho):
-        # Data generation
-        S_range = np.logspace(5, 8, 50)
-        P_range = np.logspace(7, 10, 50)
+        # --- Grid --
+        S_range = np.logspace(5, 8, 70)
+        P_range = np.logspace(7, 10, 70)
         S_grid, P_grid = np.meshgrid(S_range, P_range, indexing='ij')
-        all_runtimes = calculate_runtimes(S_grid, P_grid, k_value, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho)
-        methods_to_plot = ["Classical (CPU)", "Fragment-indexed (CPU)", "Classical+CE", "De novo+CE/ED", "Bi-encoder+ANN", "Pure cross-encoder"]
 
-        # Figure and axes setup
-        fig, axes = plt.subplots(2, 3, figsize=(15, 9), sharex=True, sharey=True)
-        axes = axes.ravel()
-
-        # Color scale normalization
-        with np.errstate(divide='ignore'):
-            log_runtimes = {label: np.log10(all_runtimes[label]) for label in methods_to_plot}
-        valid_runtimes = [rt[np.isfinite(rt)] for rt in log_runtimes.values() if np.any(np.isfinite(rt))]
-        vmin, vmax = (np.min([np.min(rt) for rt in valid_runtimes]), np.max([np.max(rt) for rt in valid_runtimes])) if valid_runtimes else (0, 10)
-
-        # Plotting loop
-        for i, method in enumerate(methods_to_plot):
-            ax = axes[i]
-            pcm = ax.pcolormesh(P_range, S_range, log_runtimes[method], vmin=vmin, vmax=vmax, cmap='viridis')
+        # --- Runtimes Dictionary ---
+        heatmaps = calculate_runtimes(S_grid, P_grid, k_value, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho)
+    
+        # --- Methods to Plot ---
+        methods_to_plot = {
+            "Classical (CPU)": heatmaps["Classical (CPU)"],
+            "Fragment-indexed (CPU)": heatmaps["Fragment-indexed (CPU)"],
+            "Classical+CE": heatmaps["Classical+CE"],
+            "De novo+CE": heatmaps["De novo+CE/ED"],
+            "Bi-encoder+ANN": heatmaps["Bi-encoder+ANN"],
+            "Cross-encoder": heatmaps["Pure cross-encoder"]
+        }
+    
+        # --- Plot Setup ---
+        fig, axes = plt.subplots(2, 3, figsize=(15, 9), constrained_layout=True)
+    
+        # --- Color Normalization ---
+        # To ensure a consistent color scale, find global min/max percentiles
+        all_data_flat = np.concatenate([Z.ravel() for Z in methods_to_plot.values()])
+        vmin = np.percentile(all_data_flat, 20)
+        vmax = np.percentile(all_data_flat, 80)
+        norm = LogNorm(vmin=vmin, vmax=vmax)
+    
+        # --- Plotting Loop ---
+        im = None  # Initialize im to be accessible for the colorbar
+        for ax, (name, Z) in zip(axes.ravel(), methods_to_plot.items()):
+            im = ax.imshow(Z, origin='lower', aspect='auto',
+                           extent=[P_range.min(), P_range.max(), S_range.min(), S_range.max()],
+                           norm=norm,
+                           cmap='viridis')
             ax.set_xscale('log')
             ax.set_yscale('log')
-            ax.set_title(method)
-            if i >= 3:
+            ax.set_title(name)
+            if ax.get_subplotspec().is_last_row():
                 ax.set_xlabel("Database size P")
-            if i % 3 == 0:
+            if ax.get_subplotspec().is_first_col():
                 ax.set_ylabel("Spectra S")
 
-        # Figure adjustments and colorbar
-        fig.subplots_adjust(right=0.85, top=0.92)
-        cbar_ax = fig.add_axes([0.88, 0.15, 0.03, 0.7])
-        cbar = fig.colorbar(pcm, cax=cbar_ax)
-        cbar.set_label('Runtime (s) log scale')
-        fig.suptitle("Heatmaps of runtime scaling as a function of both S and P", fontsize=16)
+        # --- Colorbar ---
+        if im:
+            cbar = fig.colorbar(im, ax=axes.ravel().tolist(), location='right', shrink=0.95, pad=0.02)
+            cbar.set_label("Runtime (s), log scale")
 
+        fig.suptitle("Heatmaps of runtime scaling as a function of both S and P", fontsize=16)
+    
         return fig
 
+    # You would then call this function as before:
     plot_figure5(k_slider.value, cpu_slider.value, gpu_slider.value, cross_encoder_slider.value, de_novo_slider.value, ann_slider.value, rho_slider.value)
-    return
 
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _():
+    plot_figure5(k_slider.value, cpu_slider.value, gpu_slider.value, cross_encoder_slider.value, de_novo_slider.value, ann_slider.value, rho_slider.value)
     return
 
 
