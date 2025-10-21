@@ -178,11 +178,10 @@ def _(np):
 
     def calculate_runtimes(S, P, K, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho):
         """Calculates runtimes using parameters from the interactive UI elements."""
-        S = np.asarray(S) # the number of experimental tandem mass spectra
-        P = np.asarray(P) # the number of peptides in the search database
-        K = np.asarray(K)
+        S = np.asarray(S) # The number of experimental tandem mass spectra
+        P = np.asarray(P) # The number of peptides in the search database
+        K = np.asarray(K) # The number of top candidates to rescore
 
-        broadcast_zeros = S * 0 + P * 0 + K * 0
         ann_perf_s = ann_perf_ms / 1000.0
 
         # rho is the proportion of peptides falling within the precursor tolerance window
@@ -191,30 +190,32 @@ def _(np):
         time_cross_encoder = (S * rho * P) / cross_enc_perf
 
         C_frag_index_cpu = (rho * 1e5) / cpu_perf
-        time_fragment_indexed_cpu = S * C_frag_index_cpu + broadcast_zeros
+        # By performing an operation with S, NumPy automatically broadcasts the shapes.
+        time_fragment_indexed_cpu = S * C_frag_index_cpu
 
         C_frag_index_gpu = (rho * 1e5) / gpu_perf
-        time_fragment_indexed_gpu = S * C_frag_index_gpu + broadcast_zeros
+        time_fragment_indexed_gpu = S * C_frag_index_gpu
 
-        time_denovo_decode = S / de_novo_perf + broadcast_zeros
-        time_denovo_rescore = (S * K) / cross_enc_perf + broadcast_zeros
+        # S is already an array, so subsequent operations will broadcast correctly.
+        time_denovo_decode = S / de_novo_perf
+        time_denovo_rescore = (S * K) / cross_enc_perf
         time_denovo_ce = time_denovo_decode + time_denovo_rescore
 
         time_ann_retrieval = S * (np.log(P) * ann_perf_s)
-        time_bi_encoder_rescore = (S * K) / cross_enc_perf + broadcast_zeros
+        time_bi_encoder_rescore = (S * K) / cross_enc_perf
         time_bi_encoder_ann = time_ann_retrieval + time_bi_encoder_rescore
 
-        time_classical_rescoring = (S * K) / cross_enc_perf + broadcast_zeros
+        time_classical_rescoring = (S * K) / cross_enc_perf
         time_classical_ce = time_classical_cpu + time_classical_rescoring
 
         return {
-            "Classical (CPU)": time_classical_cpu, 
+            "Classical (CPU)": time_classical_cpu,
             "Classical (GPU)": time_classical_gpu,
-            "Pure cross-encoder": time_cross_encoder, 
+            "Pure cross-encoder": time_cross_encoder,
             "Fragment-indexed (CPU)": time_fragment_indexed_cpu,
-            "Fragment-indexed (GPU)": time_fragment_indexed_gpu, 
+            "Fragment-indexed (GPU)": time_fragment_indexed_gpu,
             "De novo+CE/ED": time_denovo_ce,
-            "Bi-encoder+ANN": time_bi_encoder_ann, 
+            "Bi-encoder+ANN": time_bi_encoder_ann,
             "Classical+CE": time_classical_ce,
         }
 
@@ -249,7 +250,7 @@ def _(
 
         # Subplot A: Runtime vs K
         S_fixed, P_fixed = 1e6, 4e8
-        K_range = np.linspace(0, 500, 100)
+        K_range = np.arange(5,401,5)
         runtimes_k = calculate_runtimes(S_fixed, P_fixed, K_range, cpu_perf, 1, cross_enc_perf, de_novo_perf, ann_perf_ms, rho)
 
         ax1.plot(K_range, runtimes_k["Classical+CE"], label="Classical+CE")
@@ -274,7 +275,7 @@ def _(
         ax2.set_xlabel("Database size P")
         ax2.set_ylabel("Memory (GiB)")
         ax2.legend()
-        ax2.grid(True, which="both", ls="--", alpha=0.5)
+        ax2.grid(True, which="major", ls="--", alpha=0.5)
 
         fig.tight_layout()
         return fig
