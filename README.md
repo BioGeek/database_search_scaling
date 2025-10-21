@@ -54,7 +54,7 @@ This will start a local web server and open the app in your browser. You can adj
 
 ## License
 
-Add your license information here.
+TODO: add license information here.
 
 ---
 
