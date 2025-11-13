@@ -132,61 +132,61 @@ def _(
     return
 
 
-@app.cell
-def _(mo):
-    mo.md("""## Figure 2: Asymptotic Scaling""")
-    return
+# @app.cell
+# def _(mo):
+#     mo.md("""## Figure 2: Asymptotic Scaling""")
+#     return
 
 
-@app.cell
-def _(np, plt):
-    def plot_figure2():
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-
-        # --- Figure 2A: Scaling vs Database Size P ---
-        S_fixed = 1e6
-        P_range = np.logspace(2, 10, 200)
-
-        # Simplified Big-O for illustration
-        classical_p = P_range
-        cross_encoder_p = P_range * 100 # Larger constant factor
-        bi_encoder_p = np.log(P_range)
-        fragment_indexed_p = np.full_like(P_range, 10) # Constant
-        denovo_p = np.full_like(P_range, 30) # Constant, higher than fragment
-
-        ax1.loglog(P_range, classical_p, label="Classical CPU ~O(Sρ*P)")
-        ax1.loglog(P_range, cross_encoder_p, label="Cross-encoder ~ O(Sρ*P)")
-        ax1.loglog(P_range, bi_encoder_p, label="Bi-encoder+ANN ~O(S(log P+K))")
-        ax1.loglog(P_range, fragment_indexed_p, label="Fragment-indexed ~ O(S(L+M))")
-        ax1.loglog(P_range, denovo_p, label="De novo→CE ~O(S(C_dn+K))")
-
-        ax1.set_title("Big-O scaling vs database size")
-        ax1.set_xlabel("Database size P")
-        ax1.set_ylabel("Relative runtime (arb. units)")
-        ax1.legend()
-        ax1.grid(True, which="major", ls="--", alpha=0.5)
-
-        # --- Figure 2B: Scaling vs Spectra S ---
-        S_range = np.logspace(3, 8, 100)
-
-        # All are O(S), so they are parallel. Differences are constant factors.
-        ax2.loglog(S_range, S_range, label="Classical CPU~O(S)")
-        ax2.loglog(S_range, S_range * 10, label="Cross-encoder ~ O(S)")
-        ax2.loglog(S_range, S_range * 0.1, label="Bi-encoder+ANN ~ O(S)")
-        ax2.loglog(S_range, S_range * 0.05, label="Fragment-indexed ~ O(S)")
-        ax2.loglog(S_range, S_range * 0.5, label="De novo→CE ~O(S)")
-
-        ax2.set_title("Big-O scaling vs spectra")
-        ax2.set_xlabel("Spectra S")
-        ax2.set_ylabel("Relative runtime (arb. units)")
-        ax2.legend()
-        ax2.grid(True, which="major", ls="--", alpha=0.5)
-
-        fig.tight_layout()
-        return fig
-
-    plot_figure2()
-    return
+# @app.cell
+# def _(np, plt):
+#     def plot_figure2():
+#         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+# 
+#         # --- Figure 2A: Scaling vs Database Size P ---
+#         S_fixed = 1e6
+#         P_range = np.logspace(2, 10, 200)
+# 
+#         # Simplified Big-O for illustration
+#         classical_p = P_range
+#         cross_encoder_p = P_range * 100 # Larger constant factor
+#         bi_encoder_p = np.log(P_range)
+#         fragment_indexed_p = np.full_like(P_range, 10) # Constant
+#         denovo_p = np.full_like(P_range, 30) # Constant, higher than fragment
+# 
+#         ax1.loglog(P_range, classical_p, label="Classical CPU ~O(Sρ*P)")
+#         ax1.loglog(P_range, cross_encoder_p, label="Cross-encoder ~ O(Sρ*P)")
+#         ax1.loglog(P_range, bi_encoder_p, label="Bi-encoder+ANN ~O(S(log P+K))")
+#         ax1.loglog(P_range, fragment_indexed_p, label="Fragment-indexed ~ O(S(L+M))")
+#         ax1.loglog(P_range, denovo_p, label="De novo→CE ~O(S(C_dn+K))")
+# 
+#         ax1.set_title("Big-O scaling vs database size")
+#         ax1.set_xlabel("Database size P")
+#         ax1.set_ylabel("Relative runtime (arb. units)")
+#         ax1.legend()
+#         ax1.grid(True, which="major", ls="--", alpha=0.5)
+# 
+#         # --- Figure 2B: Scaling vs Spectra S ---
+#         S_range = np.logspace(3, 8, 100)
+# 
+#         # All are O(S), so they are parallel. Differences are constant factors.
+#         ax2.loglog(S_range, S_range, label="Classical CPU~O(S)")
+#         ax2.loglog(S_range, S_range * 10, label="Cross-encoder ~ O(S)")
+#         ax2.loglog(S_range, S_range * 0.1, label="Bi-encoder+ANN ~ O(S)")
+#         ax2.loglog(S_range, S_range * 0.05, label="Fragment-indexed ~ O(S)")
+#         ax2.loglog(S_range, S_range * 0.5, label="De novo→CE ~O(S)")
+# 
+#         ax2.set_title("Big-O scaling vs spectra")
+#         ax2.set_xlabel("Spectra S")
+#         ax2.set_ylabel("Relative runtime (arb. units)")
+#         ax2.legend()
+#         ax2.grid(True, which="major", ls="--", alpha=0.5)
+# 
+#         fig.tight_layout()
+#         return fig
+# 
+#     plot_figure2()
+#     return
 
 
 @app.cell
