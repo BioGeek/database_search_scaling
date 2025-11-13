@@ -42,31 +42,39 @@ def _(mo):
     # For CPU-based methods, we model a multi-core server processor with vectorised
     # scoring kernels sustaining ∼ 2 × 10^6 spectrum–peptide comparisons per second.
     cpu_slider = mo.ui.slider(
-        start=1e5, stop=1e8, step=1e5, value=2e6, label="CPU spectrum–peptide comparisons per second/s", full_width=True
+        start=1e5, stop=1e8, step=1e5, value=2e6, label="CPU spectrum–peptide comparisons per second/s", full_width=True, show_value=True
     )
     # GPU acceleration is modeled on a datacenter-class device (e.g., NVIDIA A100) sustaining
     #  ∼ 2 × 10^7 dot-product evaluations per second. 
     gpu_slider = mo.ui.slider(
-        start=1e6, stop=1e9, step=1e6, value=2e7, label="GPU dot-product evaluations per second/s", full_width=True
+        start=1e6, stop=1e9, step=1e6, value=2e7, label="GPU dot-product evaluations per second/s", full_width=True, show_value=True
     )
     # cross-encoder inference is assumed at ∼ 10^4 spectrum–peptide pairs per second
     cross_encoder_slider = mo.ui.slider(
-        start=1e3, stop=1e5, step=100, value=1e4, label="Cross-encoder inferences/s", full_width=True
+        start=1e3, stop=1e5, step=100, value=1e4, label="Cross-encoder inferences/s", full_width=True, show_value=True
     )
     # encoder–decoder de novo decoding achieves ∼ 2×10^3 spectra per second
     de_novo_slider = mo.ui.slider(
-        start=1e2, stop=1e4, step=100, value=2e3, label="De novo decodes/s", full_width=True
+        start=1e2, stop=1e4, step=100, value=2e3, label="De novo decodes/s", full_width=True, show_value=True
     )
     # ANN retrieval is modeled as logarithmic in P , with ∼ 0.2 ms per query and an
     # additional cost for re-ranking
     ann_slider = mo.ui.slider(
-        start=0.01, stop=5.0, step=0.01, value=0.2, label="ANN retrieval (ms/query)", full_width=True
+        start=0.01, stop=5.0, step=0.01, value=0.2, label="ANN retrieval (ms/query)", full_width=True, show_value=True
     )
     rho_slider = mo.ui.slider(
-        start=1e-6, stop=1e-3, step=1e-6, value=2e-5, label="ρ (precursor tolerance fraction)", full_width=False
+        start=1e-6, stop=1e-3, step=1e-6, value=2e-5, label="ρ (precursor tolerance fraction)", full_width=True, show_value=True
     )
     k_slider = mo.ui.slider(
-        start=10, stop=500, step=10, value=50, label="K (candidates to rescore)", full_width=False
+        start=10, stop=500, step=10, value=50, label="K (candidates to rescore)", full_width=True, show_value=True
+    )
+    # S: number of spectra
+    s_slider = mo.ui.slider(
+        start=1e3, stop=1e8, step=1e4, value=1e6, label="S (number of spectra)", full_width=True, show_value=True
+    )
+    # P: database size
+    p_slider = mo.ui.slider(
+        start=1e5, stop=1e10, step=1e6, value=4e8, label="P (database size)", full_width=True, show_value=True
     )
     return (
         ann_slider,
@@ -75,7 +83,9 @@ def _(mo):
         de_novo_slider,
         gpu_slider,
         k_slider,
+        p_slider,
         rho_slider,
+        s_slider,
     )
 
 
@@ -88,19 +98,32 @@ def _(
     gpu_slider,
     k_slider,
     mo,
+    p_slider,
     rho_slider,
+    s_slider,
 ):
-    # Arrange them into a two-column layout using vstack and hstack
+    # Arrange them into a layout with range labels under each slider
     ui_layout = mo.vstack([
                 mo.md("**Performance Parameters**"),
                 cpu_slider,
+                mo.md("_Range: 100,000 to 100 million_").style({"font-size": "0.85em", "color": "#666", "margin-top": "-10px"}),
                 gpu_slider,
+                mo.md("_Range: 1 million to 1 billion_").style({"font-size": "0.85em", "color": "#666", "margin-top": "-10px"}),
                 cross_encoder_slider,
+                mo.md("_Range: 1,000 to 100,000_").style({"font-size": "0.85em", "color": "#666", "margin-top": "-10px"}),
                 de_novo_slider,
+                mo.md("_Range: 100 to 10,000_").style({"font-size": "0.85em", "color": "#666", "margin-top": "-10px"}),
                 ann_slider,
+                mo.md("_Range: 0.01 to 5.0 ms_").style({"font-size": "0.85em", "color": "#666", "margin-top": "-10px"}),
                 mo.md("**Search Space Parameters**"),
+                s_slider,
+                mo.md("_Range: 1,000 to 100 million_").style({"font-size": "0.85em", "color": "#666", "margin-top": "-10px"}),
+                p_slider,
+                mo.md("_Range: 100,000 to 10 billion_").style({"font-size": "0.85em", "color": "#666", "margin-top": "-10px"}),
                 rho_slider,
-                k_slider],
+                mo.md("_Range: 0.000001 to 0.001_").style({"font-size": "0.85em", "color": "#666", "margin-top": "-10px"}),
+                k_slider,
+                mo.md("_Range: 10 to 500_").style({"font-size": "0.85em", "color": "#666", "margin-top": "-10px"})],
         align='center'
     )
 
@@ -246,14 +269,16 @@ def _(
     de_novo_slider,
     k_slider,
     np,
+    p_slider,
     plt,
     rho_slider,
+    s_slider,
 ):
-    def plot_figure3(k_value, cpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho):
+    def plot_figure3(s_value, p_value, k_value, cpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho):
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
         # Subplot A: Runtime vs K
-        S_fixed, P_fixed = 1e6, 4e8
+        S_fixed, P_fixed = s_value, p_value
         K_range = np.arange(5,401,5)
         runtimes_k = calculate_runtimes(S_fixed, P_fixed, K_range, cpu_perf, 1, cross_enc_perf, de_novo_perf, ann_perf_ms, rho)
 
@@ -284,7 +309,7 @@ def _(
         fig.tight_layout()
         return fig
 
-    plot_figure3(k_slider.value, cpu_slider.value, cross_encoder_slider.value, de_novo_slider.value, ann_slider.value, rho_slider.value)
+    plot_figure3(s_slider.value, p_slider.value, k_slider.value, cpu_slider.value, cross_encoder_slider.value, de_novo_slider.value, ann_slider.value, rho_slider.value)
     return
 
 
@@ -304,14 +329,16 @@ def _(
     gpu_slider,
     k_slider,
     np,
+    p_slider,
     plt,
     rho_slider,
+    s_slider,
 ):
-    def plot_figure4(k_value, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho):
+    def plot_figure4(s_value, p_value, k_value, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho):
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
         # Subplot A: Wall-time vs Database size P
-        S_fixed, P_range = 1e6, np.logspace(5, 10, 100)
+        S_fixed, P_range = s_value, np.logspace(5, 10, 100)
         runtimes_p = calculate_runtimes(S_fixed, P_range, k_value, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho)
         for label, data in runtimes_p.items():
             ax1.loglog(P_range, data, label=label)
@@ -324,7 +351,7 @@ def _(
         ax1.grid(True, which="major", ls="--", alpha=0.5)
 
         # Subplot B: Wall-time vs Spectra S
-        P_fixed, S_range = 4e8, np.logspace(5, 7, 100)
+        P_fixed, S_range = p_value, np.logspace(5, 7, 100)
         runtimes_s = calculate_runtimes(S_range, P_fixed, k_value, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho)
         for label, data in runtimes_s.items():
             ax2.loglog(S_range, data, label=label)
@@ -339,7 +366,7 @@ def _(
         fig.tight_layout()
         return fig
 
-    plot_figure4(k_slider.value, cpu_slider.value, gpu_slider.value, cross_encoder_slider.value, de_novo_slider.value, ann_slider.value, rho_slider.value)
+    plot_figure4(s_slider.value, p_slider.value, k_slider.value, cpu_slider.value, gpu_slider.value, cross_encoder_slider.value, de_novo_slider.value, ann_slider.value, rho_slider.value)
     return
 
 
@@ -359,12 +386,14 @@ def _(
     gpu_slider,
     k_slider,
     np,
+    p_slider,
     plt,
     rho_slider,
+    s_slider,
 ):
     from matplotlib.colors import LogNorm
 
-    def plot_figure5(k_value, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho):
+    def plot_figure5(s_value, p_value, k_value, cpu_perf, gpu_perf, cross_enc_perf, de_novo_perf, ann_perf_ms, rho):
         # --- Grid --
         S_range = np.logspace(5, 8, 70)
         P_range = np.logspace(7, 10, 70)
@@ -417,10 +446,7 @@ def _(
     
         return fig
 
-    # You would then call this function as before:
-    plot_figure5(k_slider.value, cpu_slider.value, gpu_slider.value, cross_encoder_slider.value, de_novo_slider.value, ann_slider.value, rho_slider.value)
-
-    plot_figure5(k_slider.value, cpu_slider.value, gpu_slider.value, cross_encoder_slider.value, de_novo_slider.value, ann_slider.value, rho_slider.value)
+    plot_figure5(s_slider.value, p_slider.value, k_slider.value, cpu_slider.value, gpu_slider.value, cross_encoder_slider.value, de_novo_slider.value, ann_slider.value, rho_slider.value)
     return
 
 
