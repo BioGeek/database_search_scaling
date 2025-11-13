@@ -21,17 +21,21 @@ Dependencies are listed in [pyproject.toml](pyproject.toml).
 
 1. **Clone the repository:**
    ```sh
-   git clone <repo-url>
-   cd comperative_framework_database_search
+   git clone https://github.com/instadeepai/database_search_scaling.git
+   cd database_search_scaling
    ```
 
-2. **Create and activate a Python 3.12 environment:**
+2. **Install `uv`**
+
+Follow the [official instructions](https://docs.astral.sh/uv/getting-started/installation/).
+
+3. **Create and activate a Python 3.12 environment:**
    ```sh
    uv venv --python 3.12
    source .venv/bin/activate
    ```
 
-3. **Install dependencies with uv:**
+4. **Install dependencies with uv:**
    ```sh
    uv sync
    ```
@@ -41,14 +45,14 @@ Dependencies are listed in [pyproject.toml](pyproject.toml).
 To launch the interactive notebook, run:
 
 ```sh
-marimo run proteomics_scaling.py
+marimo run database_search_scaling.py
 ```
 
 This will start a local web server and open the app in your browser. You can adjust parameters and view updated figures interactively.
 
 ## Project Structure
 
-- `proteomics_scaling.py`: Main marimo app with all interactive cells and visualizations.
+- `database_search_scaling.py`: Main marimo app with all interactive cells and visualizations.
 - `pyproject.toml`: Project metadata and dependencies.
 - `.python-version`: Specifies required Python version.
 
